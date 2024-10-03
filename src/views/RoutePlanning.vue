@@ -22,29 +22,29 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="路径点">
-          <div class="route-points-container">
-            <div v-for="(point, index) in form.route" :key="index" class="point-input">
-              <el-input
-                v-model="form.route[index]"
-                placeholder="经度,纬度,高度"
-              >
-                <template #append>
-                  <el-button @click="removePoint(index)" :disabled="form.route.length === 1" type="danger">删除</el-button>
-                </template>
-              </el-input>
-            </div>
-          </div>
-          <div class="route-buttons">
-            <el-button @click="addPoint" type="primary">添加路径点</el-button>
-            <el-button @click="fillDefaultPoints" type="info">填充默认路径点</el-button>
-          </div>
-        </el-form-item>
-
         <el-form-item>
+          <el-button type="primary" @click="loadOriginalWaypoints">加载原始航点</el-button>
           <el-button type="success" @click="submitForm">提交</el-button>
         </el-form-item>
       </el-form>
+    </el-card>
+
+    <el-card class="map-card">
+      <template #header>
+        <div class="card-header">
+          <span>原始路径</span>
+        </div>
+      </template>
+      <div id="originalMapContainer" class="map-container"></div>
+    </el-card>
+
+    <el-card class="map-card">
+      <template #header>
+        <div class="card-header">
+          <span>新路径</span>
+        </div>
+      </template>
+      <div id="newMapContainer" class="map-container"></div>
     </el-card>
 
     <el-card v-if="originalWaypoints.length > 0" class="waypoints-card">
@@ -72,10 +72,6 @@
         <el-table-column prop="2" label="高度"></el-table-column>
       </el-table>
     </el-card>
-
-    <el-card class="map-card">
-      <div id="mapContainer" style="height: 400px;"></div>
-    </el-card>
   </div>
 </template>
 
@@ -87,18 +83,40 @@ import AMapLoader from '@amap/amap-jsapi-loader'
 
 const form = ref({
   kmzFile: null,
-  route: ['']
 })
 
 const originalWaypoints = ref([])
+const selectedWaypoints = ref([])
 const newWaypoints = ref([])
 
-const defaultPoints = [
-  '102.520837917991,25.4405945326583,2335.0',
-  '102.521462857153,25.4405846811935,2330.5',
-  '102.520687618858,25.4408916896165,2343.5',
-  '102.520554539132,25.4409443910344,2343.99309443843'
-]
+const originalMap = ref(null)
+const newMap = ref(null)
+
+onMounted(() => {
+  initMaps()
+})
+
+const initMaps = async () => {
+  try {
+    const AMap = await AMapLoader.load({
+      key: '5f4cb0c169a6a27e32e76364150becf4',
+      version: '2.0',
+      plugins: ['AMap.Polyline', 'AMap.Marker']
+    })
+
+    originalMap.value = new AMap.Map('originalMapContainer', {
+      zoom: 13,
+      center: [102.520837917991, 25.4405945326583]
+    })
+
+    newMap.value = new AMap.Map('newMapContainer', {
+      zoom: 13,
+      center: [102.520837917991, 25.4405945326583]
+    })
+  } catch (e) {
+    console.error('地图加载失败', e)
+  }
+}
 
 const handleFileChange = (file) => {
   if (file && file.raw) {
@@ -109,26 +127,9 @@ const handleFileChange = (file) => {
   }
 }
 
-const addPoint = () => {
-  form.value.route.push('')
-}
-
-const removePoint = (index) => {
-  form.value.route.splice(index, 1)
-}
-
-const fillDefaultPoints = () => {
-  form.value.route = [...defaultPoints]
-  renderRouteOnMap()
-}
-
-const submitForm = async () => {
+const loadOriginalWaypoints = async () => {
   if (!form.value.kmzFile) {
-    ElMessage.error('请选择KMZ文件')
-    return
-  }
-  if (form.value.route.length === 0 || form.value.route.some(point => !point.trim())) {
-    ElMessage.error('请输入至少一个有效的路径点')
+    ElMessage.error('请先选择KMZ文件')
     return
   }
 
@@ -136,25 +137,93 @@ const submitForm = async () => {
     const formData = new FormData()
     formData.append('kmz_file', form.value.kmzFile)
 
-    // 解析路径点字符串为JSON格式
-    const routePoints = form.value.route.map(point => {
-      const [longitude, latitude, altitude] = point.split(',').map(Number)
-      return [longitude, latitude, altitude]
+    const response = await faultDetectionApi.getAllWaypoints(formData)
+    if (response.data.code === 0) {
+      originalWaypoints.value = response.data.data.waypoints
+      renderRouteOnMap(originalMap.value, originalWaypoints.value, '#FF0000', true)
+      ElMessage.success('原始航点加载成功')
+    } else {
+      ElMessage.error('加载原始航点失败')
+    }
+  } catch (error) {
+    console.error('Error:', error)
+    ElMessage.error('加载原始航点失败')
+  }
+}
+
+const renderRouteOnMap = (map, waypoints, color = 'blue', selectable = false) => {
+  if (!map) return
+
+  const path = waypoints.map(point => [point[0], point[1]])
+
+  // 清除现有的覆盖物
+  map.clearMap()
+
+  // 添加标记
+  path.forEach((position, index) => {
+    const marker = new AMap.Marker({
+      position: position,
+      label: {
+        content: `点 ${index + 1}`,
+        direction: 'top'
+      }
     })
-    formData.append('route', JSON.stringify(routePoints))
+    map.add(marker)
 
-    console.log('FormData entries:')
-    for (let [key, value] of formData.entries()) {
-      console.log(key, value)
+    if (selectable) {
+      marker.on('click', () => {
+        toggleWaypointSelection(index, marker)
+      })
     }
+  })
 
-    // 获取原始KMZ文件的航点
-    const originalWaypointsResponse = await faultDetectionApi.getAllWaypoints(formData)
-    if (originalWaypointsResponse.data.code === 0) {
-      originalWaypoints.value = originalWaypointsResponse.data.data.waypoints
-    }
+  // 添加连线
+  const polyline = new AMap.Polyline({
+    path: path,
+    strokeColor: 'blue',
+    strokeWeight: 5,
+    strokeOpacity: 0.8
+  })
+  map.add(polyline)
 
-    // 提交新路径
+  // 调整视图以包含所有点
+  map.setFitView()
+}
+
+const toggleWaypointSelection = (index, marker) => {
+  const waypoint = originalWaypoints.value[index]
+  const existingIndex = selectedWaypoints.value.findIndex(wp => wp[0] === waypoint[0] && wp[1] === waypoint[1])
+  
+  if (existingIndex === -1) {
+    selectedWaypoints.value.push(waypoint)
+    marker.setIcon(new AMap.Icon({
+      size: new AMap.Size(25, 34),
+      image: 'https://webapi.amap.com/theme/v1.3/markers/n/mark_r.png'
+    }))
+  } else {
+    selectedWaypoints.value.splice(existingIndex, 1)
+    marker.setIcon(new AMap.Icon({
+      size: new AMap.Size(25, 34),
+      image: 'https://webapi.amap.com/theme/v1.3/markers/n/mark_b.png'
+    }))
+  }
+}
+
+const submitForm = async () => {
+  if (!form.value.kmzFile) {
+    ElMessage.error('请选择KMZ文件')
+    return
+  }
+  if (selectedWaypoints.value.length === 0) {
+    ElMessage.error('请选择至少一个航点')
+    return
+  }
+
+  try {
+    const formData = new FormData()
+    formData.append('kmz_file', form.value.kmzFile)
+    formData.append('route', JSON.stringify(selectedWaypoints.value))
+
     const response = await faultDetectionApi.submitRoute(formData)
 
     // 创建一个Blob对象并生成下载链接
@@ -173,111 +242,32 @@ const submitForm = async () => {
     const newWaypointsResponse = await faultDetectionApi.getAllWaypoints(newFormData)
     if (newWaypointsResponse.data.code === 0) {
       newWaypoints.value = newWaypointsResponse.data.data.waypoints
+      renderRouteOnMap(newMap.value, newWaypoints.value, '#00FF00')
+      ElMessage.success('新的KMZ文件已生成并下载，地图和表格已更新')
+    } else {
+      ElMessage.error('获取新航点失败')
     }
-
-    renderRouteOnMap()
-
-    ElMessage.success('新的KMZ文件已生成并下载，地图已更新')
   } catch (error) {
     console.error('Error:', error)
     ElMessage.error('提交失败，请重试')
   }
 }
-
-const map = ref(null)
-
-onMounted(() => {
-  initMap()
-})
-
-const initMap = async () => {
-  try {
-    const AMap = await AMapLoader.load({
-      key: '5f4cb0c169a6a27e32e76364150becf4',
-      version: '2.0',
-      plugins: ['AMap.Polyline', 'AMap.Marker']
-    })
-
-    map.value = new AMap.Map('mapContainer', {
-      zoom: 13,
-      center: [102.520837917991, 25.4405945326583] // 默认中心点，可以根据需要调整
-    })
-  } catch (e) {
-    console.error('地图加载失败', e)
-  }
-}
-
-const renderRouteOnMap = () => {
-  if (!map.value) return
-
-  const path = form.value.route.map(point => {
-    const [longitude, latitude] = point.split(',').map(Number)
-    return [longitude, latitude]
-  })
-
-  // 清除现有的覆盖物
-  map.value.clearMap()
-
-  // 添加标记
-  path.forEach((position, index) => {
-    const marker = new AMap.Marker({
-      position: position,
-      label: {
-        content: `点 ${index + 1}`,
-        direction: 'top'
-      }
-    })
-    map.value.add(marker)
-  })
-
-  // 添加连线
-  const polyline = new AMap.Polyline({
-    path: path,
-    strokeColor: '#3366FF',
-    strokeWeight: 5,
-    strokeOpacity: 0.8
-  })
-  map.value.add(polyline)
-
-  // 调整视图以包含所有点
-  map.value.setFitView()
-}
 </script>
 
 <style scoped>
 .route-planning {
-  max-width: 800px;
-  margin: 0 auto;
   padding: 20px;
 }
 
-h1 {
-  color: var(--primary-color);
-  text-align: center;
-  margin-bottom: 30px;
+.route-planning-card,
+.map-card,
+.waypoints-card {
+  margin-bottom: 20px;
 }
 
-.route-planning-card {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-}
-
-.route-points-container {
-  max-height: 300px;
-  overflow-y: auto;
-  border-radius: 4px;
-  margin-bottom: 10px;
-}
-
-.point-input {
-  margin-bottom: 10px;
-}
-
-.route-buttons {
-  margin-left: 20px;
-  display: flex;
-  justify-content: flex-start;
-  align-self: start;
+.map-container {
+  height: 600px;
+  width: 100%;
 }
 
 .el-form-item {
@@ -288,31 +278,7 @@ h1 {
   margin-right: 10px;
 }
 
-@media (max-width: 768px) {
-  .route-planning {
-    padding: 10px;
-  }
-
-  .el-form-item {
-    margin-bottom: 15px;
-  }
-}
-
-.waypoints-card {
-  margin-top: 20px;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .el-table {
-  margin-top: 20px;
-}
-
-.map-card {
   margin-top: 20px;
 }
 </style>
