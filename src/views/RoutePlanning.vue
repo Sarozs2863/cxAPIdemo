@@ -259,15 +259,14 @@ const submitForm = async () => {
   padding: 20px;
 }
 
-.route-planning-card,
-.map-card,
-.waypoints-card {
-  margin-bottom: 20px;
+h1 {
+  color: var(--primary-color);
+  text-align: center;
+  margin-bottom: 30px;
 }
 
-.map-container {
-  height: 600px;
-  width: 100%;
+.el-card {
+  margin-bottom: 20px;
 }
 
 .el-form-item {
@@ -278,7 +277,14 @@ const submitForm = async () => {
   margin-right: 10px;
 }
 
-.el-table {
-  margin-top: 20px;
+.map-container {
+  height: 600px;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .el-form-item {
+    margin-bottom: 15px;
+  }
 }
 </style>
