@@ -1,0 +1,64 @@
+:root {
+  --primary-color: #409eff;
+  --background-color: #f5f7fa;
+  --text-color: #303133;
+  --border-color: #dcdfe6;
+}
+
+body {
+  font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "微软雅黑", Arial, sans-serif;
+  background-color: var(--background-color);
+  color: var(--text-color);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.el-card {
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.el-card__header {
+  background-color: var(--primary-color);
+  color: white;
+  border-radius: 8px 8px 0 0;
+}
+
+.el-button {
+  transition: all 0.3s;
+}
+
+.el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.el-input__inner:focus {
+  border-color: var(--primary-color);
+}
+
+.el-table th {
+  background-color: #f5f7fa;
+  color: var(--text-color);
+  font-weight: bold;
+}
+
+.el-table--striped .el-table__body tr.el-table__row--striped td {
+  background-color: #fafafa;
+}
+
+.el-table--enable-row-hover .el-table__body tr:hover > td {
+  background-color: #f0f7ff;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 10px;
+  }
+}
